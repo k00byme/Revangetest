@@ -49,23 +49,33 @@ jobs:
           import pathlib, re
           root = pathlib.Path("decompiled/sources")
           report = pathlib.Path("report/classes-and-methods.txt")
-          terms = ("chess", "board", "analysis", "game", "position", "bot", "engine", "play")
-          files = sorted(p for p in root.rglob("*.java") if any(t in str(p).lower() for t in terms))
+          exact = [
+              "com/chess/chessboard/v2/ChessBoardView.java",
+              "com/chess/realchess/ui/game/RealGameActivity.java",
+              "com/chess/realchess/ui/game/RealGameViewModel.java",
+              "com/chess/chessboard/variants/PositionExtKt.java",
+              "com/chess/chessboard/variants/standard/StandardPosition.java",
+              "com/chess/chessboard/variants/standard/bitboard/FenUtilsKt.java",
+              "com/chess/features/analysis/standalonev2/StandaloneAnalysisActivityV2.java",
+          ]
           with report.open("w", encoding="utf-8") as out:
-              out.write(f"Candidate source files: {len(files)}\n\n")
-              for p in files:
-                  try: lines = p.read_text(encoding="utf-8", errors="ignore").splitlines()
-                  except Exception: continue
-                  hits = []
+              for rel in exact:
+                  p = root / rel
+                  out.write("\\n\\n========== " + rel + " ==========\\n")
+                  if not p.exists():
+                      out.write("NOT RECOVERED BY JADX\\n")
+                      continue
+                  lines = p.read_text(encoding="utf-8", errors="ignore").splitlines()
                   for line in lines:
-                      s = line.strip()
-                      if (re.search(r"\b(class|interface|enum)\s+\w+", s)
-                          or re.search(r"\b(onCreate|onResume|onDraw|onLayout|getPosition|getFen|getFEN|getBoard|toFen|toFEN|fen|position)\s*\(", s, re.I)):
-                          hits.append(s[:220])
-                  if hits:
-                      out.write(str(p.relative_to(root)) + "\n")
-                      for h in hits[:80]: out.write("  " + h + "\n")
-                      out.write("\n")
+                      s = line.rstrip()
+                      if (
+                          re.search(r"\\b(class|interface|enum)\\s+\\w+", s)
+                          or re.search(r"\\b(public|protected|private)\\b", s)
+                          or re.search(r"\\b(onCreate|onResume|onDraw|onLayout|getPosition|getFen|getFEN|getBoard|toFen|toFEN|fen|position)\\s*\\(", s, re.I)
+                          or "findViewById" in s or "setContentView" in s
+                      ):
+                          out.write(s[:400] + "\\n")
+          print(report.read_text(encoding="utf-8")[:12000])
           PY
           echo "Manifest activities:"
           grep -oE 'android:name="[^"]+"' report/AndroidManifest.xml 2>/dev/null | sort -u || true
