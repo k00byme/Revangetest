@@ -38,9 +38,10 @@ jobs:
           set -euo pipefail
           mapfile -t apks < apk-list.txt
           ./jadx/bin/jadx --threads-count 2 --show-bad-code -d decompiled "${apks[@]}" >/tmp/jadx.log 2>&1 || {
-            tail -80 /tmp/jadx.log
-            exit 1
+            echo "JADX reported partial decompilation errors; continuing with recoverable classes."
+            tail -30 /tmp/jadx.log
           }
+          test -d decompiled/sources
           mkdir -p report
           cp apk-list.txt report/
           cp decompiled/resources/AndroidManifest.xml report/AndroidManifest.xml 2>/dev/null || true
