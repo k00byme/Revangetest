@@ -33,16 +33,23 @@ jobs:
           unzip -q jadx.zip -d jadx
           chmod +x jadx/bin/jadx
 
-      - name: Decompile and produce structural report
+      - name: Decompile the relevant classes only
         run: |
           set -euo pipefail
-          mapfile -t apks < apk-list.txt
-          ./jadx/bin/jadx --threads-count 2 --show-bad-code -d decompiled "${apks[@]}" >/tmp/jadx.log 2>&1 || {
-            echo "JADX reported partial decompilation errors; continuing with recoverable classes."
-            tail -30 /tmp/jadx.log
-          }
-          test -d decompiled/sources
-          mkdir -p report
+          mkdir -p decompiled report
+          for cls in \
+            com.chess.chessboard.v2.ChessBoardView \
+            com.chess.realchess.ui.game.RealGameActivity \
+            com.chess.realchess.ui.game.RealGameViewModel \
+            com.chess.chessboard.variants.PositionExtKt \
+            com.chess.chessboard.variants.standard.StandardPosition \
+            com.chess.chessboard.variants.standard.bitboard.FenUtilsKt \
+            com.chess.features.analysis.standalonev2.StandaloneAnalysisActivityV2
+          do
+            echo "Decompiling $cls"
+            ./jadx/bin/jadx --no-res --threads-count 2 --single-class "$cls" -d decompiled xapk/com.chess.apk \
+              || echo "WARNING: JADX could not fully decompile $cls"
+          done
           cp apk-list.txt report/
           cp decompiled/resources/AndroidManifest.xml report/AndroidManifest.xml 2>/dev/null || true
           python3 - <<'PY'
@@ -80,11 +87,6 @@ jobs:
                           out.write(s[:400] + "\n")
           print(report.read_text(encoding="utf-8")[:12000])
           PY
-          echo "Manifest activities:"
-          grep -oE 'android:name="[^"]+"' report/AndroidManifest.xml 2>/dev/null | sort -u || true
-          echo "Candidate classes:"
-          grep -RIlE 'class .*?(ChessBoard|BoardView|StandaloneAnalysis|GameActivity|Bot)' decompiled/sources/com/chess 2>/dev/null | head -100 || true
-
       - name: Upload structural report only
         uses: actions/upload-artifact@v4
         with:
