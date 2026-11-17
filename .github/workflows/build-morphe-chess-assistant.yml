@@ -1,6 +1,9 @@
 name: Build Morphe Chess Assistant
 
 on:
+  push:
+    branches:
+      - morphe-chess-assistant
   workflow_dispatch:
 
 permissions:
