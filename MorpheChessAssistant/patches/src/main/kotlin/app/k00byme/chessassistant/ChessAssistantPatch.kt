@@ -33,7 +33,7 @@ val chessAssistantPatch = patch(
         method.addInstructions(
             0,
             """
-                invoke-static {p0}, $EXTENSION_CLASS;->install(Landroid/app/Activity;)V
+                invoke-static {p0}, ${EXTENSION_CLASS}->install(Landroid/app/Activity;)V
             """
         )
     }
