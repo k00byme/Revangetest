@@ -166,7 +166,11 @@ public final class ChessAssistantPatch {
             View found = findBoard(content);
             if (found == null) {
                 boardView = null;
+                activeFen = "";
+                requestedFen = "";
                 bestMove = "";
+                evaluation = 0.0;
+                mate = 0;
                 drawing.setBoard(null);
                 drawing.setEngine("", 0.0, 0, false);
                 setStatus("Aguardando o tabuleiro do jogo…");
@@ -176,7 +180,11 @@ public final class ChessAssistantPatch {
 
             String fen = readFen(found);
             if (!isFen(fen)) {
+                activeFen = "";
+                requestedFen = "";
                 bestMove = "";
+                evaluation = 0.0;
+                mate = 0;
                 drawing.setBoard(found);
                 drawing.setEngine("", 0.0, 0, isBoardFlipped(found));
                 setStatus("Aguardando uma posição válida do tabuleiro…");
@@ -339,6 +347,35 @@ public final class ChessAssistantPatch {
         return null;
     }
 
+    private static Boolean readDelegatedBoolean(View board, Object delegate) {
+        if (delegate == null) return null;
+        // ChessBoardView.isBoardFlipped is a Kotlin delegated property. Its generated
+        // delegate exposes getValue(thisRef, property), not a zero-argument getter.
+        for (Method method : delegate.getClass().getMethods()) {
+            if (!"getValue".equals(method.getName()) || method.getParameterTypes().length != 2) continue;
+            try {
+                method.setAccessible(true);
+                Object value = method.invoke(delegate, board, null);
+                Boolean result = readBooleanValue(value);
+                if (result != null) return result;
+            } catch (Throwable ignored) {
+                // Continue to the delegate's backing state.
+            }
+        }
+        // Fallback for the delegated property holder's backing-state field.
+        for (Class<?> type = delegate.getClass(); type != null; type = type.getSuperclass()) {
+            try {
+                Field state = type.getDeclaredField("c");
+                state.setAccessible(true);
+                Boolean result = readBooleanValue(state.get(delegate));
+                if (result != null) return result;
+            } catch (Throwable ignored) {
+                // The delegate may use a different implementation.
+            }
+        }
+        return null;
+    }
+
     private static boolean isBoardFlipped(View board) {
         if (board == null) return false;
         String[] getters = {"getFlipBoard", "isBoardFlipped", "getBoardFlipped", "getIsBoardFlipped"};
@@ -352,10 +389,16 @@ public final class ChessAssistantPatch {
             }
         }
         try {
-            Field field = board.getClass().getDeclaredField("isBoardFlipped");
-            field.setAccessible(true);
-            Boolean result = readBooleanValue(field.get(board));
-            if (result != null) return result;
+            for (Class<?> type = board.getClass(); type != null; type = type.getSuperclass()) {
+                try {
+                    Field field = type.getDeclaredField("isBoardFlipped");
+                    field.setAccessible(true);
+                    Boolean result = readDelegatedBoolean(board, field.get(board));
+                    if (result != null) return result;
+                } catch (NoSuchFieldException ignored) {
+                    // Continue through superclasses.
+                }
+            }
         } catch (Throwable ignored) {
             // Default orientation is White at the bottom.
         }
