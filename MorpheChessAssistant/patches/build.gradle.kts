@@ -3,7 +3,7 @@ group = "app.k00byme"
 patches {
     about {
         name = "Chess Assistant"
-        description = "Stockfish analysis overlay for Chess.com standalone analysis."
+        description = "Stockfish move arrow, board-square highlights and evaluation for Chess.com bot games and standalone analysis."
         source = "https://github.com/k00byme/Revangetest/tree/morphe-chess-assistant/MorpheChessAssistant"
         author = "k00byme"
         contact = "GitHub issues"
