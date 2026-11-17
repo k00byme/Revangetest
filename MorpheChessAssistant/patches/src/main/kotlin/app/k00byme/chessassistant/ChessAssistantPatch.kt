@@ -8,33 +8,36 @@ private const val EXTENSION_CLASS = "Lapp/k00byme/chessassistant/extension/Chess
 
 @Suppress("unused")
 val chessAssistantPatch = patch(
-    name = "Stockfish analysis overlay",
-    description = "Shows an evaluation and best-move arrow on the standalone analysis board.",
+    name = "Stockfish board assistant",
+    description = "Shows a Stockfish move arrow, source/destination highlights and evaluation in bot games and standalone analysis.",
     default = true
 ) {
     compatibleWith(Constants.CHESS_COM_COMPATIBILITY)
     extendWith("extensions/extension.mpe")
 
     execute {
-        // Hook only Chess.com's standalone analysis ActivityV2.
-        // The patch is not attached to live-game activities or the in-game board.
-        val analysisActivityFingerprint = Fingerprint(
-            definingClass = "Lcom/chess/features/analysis/standalonev2/StandaloneAnalysisActivityV2;",
-            name = "onCreate",
-            returnType = "V",
-            parameters = listOf("Landroid/os/Bundle;"),
-            isStatic = false
-        )
+        fun hookActivity(className: String) {
+            val fingerprint = Fingerprint(
+                definingClass = className,
+                name = "onCreate",
+                returnType = "V",
+                parameters = listOf("Landroid/os/Bundle;"),
+                isStatic = false
+            )
+            val method = fingerprint.methodOrNull ?: throw fingerprint.patchException()
+            method.addInstructions(
+                0,
+                """
+                    invoke-static {p0}, ${EXTENSION_CLASS}->install(Landroid/app/Activity;)V
+                """
+            )
+        }
 
-        val method = analysisActivityFingerprint.methodOrNull
-            ?: throw analysisActivityFingerprint.patchException()
+        // Standalone analysis / post-game review screen.
+        hookActivity("Lcom/chess/features/analysis/standalonev2/StandaloneAnalysisActivityV2;")
 
-        // install() only posts a delayed UI task. The original onCreate continues normally.
-        method.addInstructions(
-            0,
-            """
-                invoke-static {p0}, ${EXTENSION_CLASS}->install(Landroid/app/Activity;)V
-            """
-        )
+        // Dedicated Chess.com "Play vs Bots" screen (works for its online/offline bot sessions).
+        // The general RealGameActivity used for competitive human games is intentionally not hooked.
+        hookActivity("Lcom/chess/features/versusbots/game/BotGameActivityV2;")
     }
 }
