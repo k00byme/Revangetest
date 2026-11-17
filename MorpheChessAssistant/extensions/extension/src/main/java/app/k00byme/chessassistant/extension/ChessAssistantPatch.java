@@ -23,6 +23,8 @@ import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.lang.ref.WeakReference;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
@@ -35,25 +37,27 @@ import java.util.regex.Pattern;
 /**
  * Runtime code merged into Chess.com by Morphe.
  *
- * This extension is installed only from StandaloneAnalysisActivityV2.
- * It never hooks live-game activities, clicks squares, or submits moves.
+ * This extension is installed only from the dedicated Play-vs-Bots activity
+ * and the standalone analysis activity. It does not hook competitive RealGameActivity,
+ * click squares, submit moves, or change the game state.
  */
 public final class ChessAssistantPatch {
     private static final String TAG = "morphe.chess.assistant.analysis";
-    private static final String BOARD_CLASS = "com.chess.chessboard.v2.ChessBoardView";
+    private static final String BOARD_CLASS_V2 = "com.chess.chessboard.v2.ChessBoardView";
+    private static final String BOARD_CLASS_V1 = "com.chess.chessboard.view.ChessBoardView";
     private static final String STOCKFISH_URL = "https://stockfish.online/api/s/v2.php";
     private static final int ENGINE_DEPTH = 12;
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
 
     private ChessAssistantPatch() {}
 
-    /** Called by the Morphe bytecode hook from the standalone analysis Activity only. */
+    /** Called from BotGameActivityV2 or the standalone analysis screen. */
     public static void install(Activity activity) {
         if (activity == null) return;
-        if (!"com.chess.features.analysis.standalonev2.StandaloneAnalysisActivityV2"
-                .equals(activity.getClass().getName())) {
-            return;
-        }
+        String activityName = activity.getClass().getName();
+        boolean supported = "com.chess.features.versusbots.game.BotGameActivityV2".equals(activityName)
+                || "com.chess.features.analysis.standalonev2.StandaloneAnalysisActivityV2".equals(activityName);
+        if (!supported) return;
 
         // onCreate is hooked before the app creates its content view, so defer installation.
         MAIN.postDelayed(() -> {
@@ -95,7 +99,7 @@ public final class ChessAssistantPatch {
         private String requestedFen = "";
         private String activeFen = "";
         private String bestMove = "";
-        private String status = "Procurando o tabuleiro de análise…";
+        private String status = "Procurando o tabuleiro…";
         private double evaluation = 0.0;
         private int mate = 0;
         private View boardView;
@@ -161,28 +165,41 @@ public final class ChessAssistantPatch {
             View content = activity.findViewById(android.R.id.content);
             View found = findBoard(content);
             if (found == null) {
-                setStatus("Aguardando o tabuleiro da análise…");
+                boardView = null;
+                bestMove = "";
+                drawing.setBoard(null);
+                drawing.setEngine("", 0.0, 0, false);
+                setStatus("Aguardando o tabuleiro do jogo…");
                 return;
             }
             boardView = found;
 
             String fen = readFen(found);
             if (!isFen(fen)) {
-                setStatus("Aguardando uma posição FEN válida…");
+                bestMove = "";
+                drawing.setBoard(found);
+                drawing.setEngine("", 0.0, 0, isBoardFlipped(found));
+                setStatus("Aguardando uma posição válida do tabuleiro…");
                 return;
             }
 
-            activeFen = fen;
             drawing.setBoard(found);
+            if (!fen.equals(activeFen)) {
+                activeFen = fen;
+                bestMove = "";
+                evaluation = 0.0;
+                mate = 0;
+                drawing.setEngine("", 0.0, 0, isBoardFlipped(found));
+            }
 
             if (!fen.equals(requestedFen) && !requestInFlight) {
-                requestedFen = fen;
                 requestAnalysis(fen);
             }
             drawing.setEngine(bestMove, evaluation, mate, isBoardFlipped(found));
         }
 
         private void requestAnalysis(final String fen) {
+            requestedFen = fen;
             requestInFlight = true;
             setStatus("Stockfish analisando…");
             try {
@@ -191,11 +208,21 @@ public final class ChessAssistantPatch {
                     MAIN.post(() -> {
                         requestInFlight = false;
                         if (closed || !isAttachedToWindow()) return;
-                        if (!fen.equals(activeFen)) return;
+
+                        // A newer position may have arrived while the previous request was running.
+                        if (!fen.equals(activeFen)) {
+                            String newestFen = activeFen;
+                            if (isFen(newestFen) && !newestFen.equals(requestedFen)) {
+                                requestAnalysis(newestFen);
+                            }
+                            return;
+                        }
 
                         if (result.error != null) {
-                            setStatus("Stockfish indisponível: " + result.error);
+                            setStatus("Stockfish indisponível (precisa de internet): " + result.error);
                             bestMove = "";
+                            evaluation = 0.0;
+                            mate = 0;
                             drawing.setEngine("", 0.0, 0, isBoardFlipped(boardView));
                             return;
                         }
@@ -228,7 +255,8 @@ public final class ChessAssistantPatch {
 
     private static View findBoard(View view) {
         if (view == null) return null;
-        if (BOARD_CLASS.equals(view.getClass().getName())) return view;
+        String className = view.getClass().getName();
+        if (BOARD_CLASS_V2.equals(className) || BOARD_CLASS_V1.equals(className)) return view;
         if (view instanceof ViewGroup) {
             ViewGroup group = (ViewGroup) view;
             for (int i = 0; i < group.getChildCount(); i++) {
@@ -239,27 +267,97 @@ public final class ChessAssistantPatch {
         return null;
     }
 
+    private static String invokeFen(Object position) {
+        if (position == null) return "";
+        String[] names = {"o", "toFen", "getFen", "getFEN", "fen"};
+        for (String name : names) {
+            try {
+                Method method = position.getClass().getMethod(name);
+                if (method.getParameterTypes().length != 0) continue;
+                Object value = method.invoke(position);
+                if (value instanceof String && isFen((String) value)) return ((String) value).trim();
+            } catch (Throwable ignored) {
+                // Continue through the version-specific position accessors.
+            }
+        }
+        return "";
+    }
+
     private static String readFen(View board) {
+        if (board == null) return "";
         try {
             Object position = board.getClass().getMethod("getPosition").invoke(board);
-            if (position == null) return "";
-            Object value = position.getClass().getMethod("o").invoke(position);
-            return value instanceof String ? ((String) value).trim() : "";
+            String direct = invokeFen(position);
+            if (isFen(direct)) return direct;
+
+            // The legacy board wraps its StandardPosition in a field named "a".
+            if (position != null) {
+                for (Class<?> type = position.getClass(); type != null; type = type.getSuperclass()) {
+                    try {
+                        Field field = type.getDeclaredField("a");
+                        field.setAccessible(true);
+                        String nested = invokeFen(field.get(position));
+                        if (isFen(nested)) return nested;
+                    } catch (Throwable ignored) {
+                        // This wrapper does not expose the legacy position field.
+                    }
+                }
+            }
         } catch (Throwable ignored) {
-            return "";
+            // The board can be present before the first game position is available.
         }
+        return "";
+    }
+
+    private static Boolean readBooleanValue(Object value) {
+        if (value instanceof Boolean) return (Boolean) value;
+        if (value == null) return null;
+        String[] getters = {"getValue", "get", "isValue", "a"};
+        for (String name : getters) {
+            try {
+                Method method = value.getClass().getMethod(name);
+                if (method.getParameterTypes().length != 0) continue;
+                Object result = method.invoke(value);
+                if (result instanceof Boolean) return (Boolean) result;
+            } catch (Throwable ignored) {
+                // Try the next accessor.
+            }
+        }
+        for (Class<?> type = value.getClass(); type != null; type = type.getSuperclass()) {
+            for (Field field : type.getDeclaredFields()) {
+                try {
+                    if (field.getType() == boolean.class || field.getType() == Boolean.class) {
+                        field.setAccessible(true);
+                        Object result = field.get(value);
+                        if (result instanceof Boolean) return (Boolean) result;
+                    }
+                } catch (Throwable ignored) {
+                    // Ignore inaccessible implementation fields.
+                }
+            }
+        }
+        return null;
     }
 
     private static boolean isBoardFlipped(View board) {
         if (board == null) return false;
-        String[] names = {"getFlipBoard", "isBoardFlipped", "getBoardFlipped"};
-        for (String name : names) {
+        String[] getters = {"getFlipBoard", "isBoardFlipped", "getBoardFlipped", "getIsBoardFlipped"};
+        for (String name : getters) {
             try {
                 Object value = board.getClass().getMethod(name).invoke(board);
-                if (value instanceof Boolean) return (Boolean) value;
+                Boolean result = readBooleanValue(value);
+                if (result != null) return result;
             } catch (Throwable ignored) {
-                // This app version does not expose that getter on this board implementation.
+                // Read the observable property exposed by ChessBoardView below.
             }
+        }
+        try {
+            Field field = board.getClass().getDeclaredField("isBoardFlipped");
+            field.setAccessible(true);
+            Boolean result = readBooleanValue(field.get(board));
+            if (result != null) return result;
+        } catch (Throwable ignored) {
+            // Default orientation is White at the bottom.
         }
         return false;
     }
@@ -349,6 +447,8 @@ public final class ChessAssistantPatch {
 
     private static final class BoardDrawing extends View {
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint fromSquarePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint toSquarePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final WeakReference<Context> contextRef;
         private View board;
         private String bestMove = "";
@@ -421,6 +521,23 @@ public final class ChessAssistantPatch {
             int fromRow = flipped ? fromRank : 7 - fromRank;
             int toColumn = flipped ? 7 - toFile : toFile;
             int toRow = flipped ? toRank : 7 - toRank;
+
+            // Distinct translucent highlights identify the piece to move and its destination.
+            fromSquarePaint.setColor(0x6638BDF8);
+            toSquarePaint.setColor(0x8864DD7F);
+            float inset = square * 0.055f;
+            canvas.drawRoundRect(
+                    new RectF(left + fromColumn * square + inset,
+                            top + fromRow * square + inset,
+                            left + (fromColumn + 1) * square - inset,
+                            top + (fromRow + 1) * square - inset),
+                    square * 0.09f, square * 0.09f, fromSquarePaint);
+            canvas.drawRoundRect(
+                    new RectF(left + toColumn * square + inset,
+                            top + toRow * square + inset,
+                            left + (toColumn + 1) * square - inset,
+                            top + (toRow + 1) * square - inset),
+                    square * 0.09f, square * 0.09f, toSquarePaint);
 
             float startX = left + (fromColumn + 0.5f) * square;
             float startY = top + (fromRow + 0.5f) * square;
