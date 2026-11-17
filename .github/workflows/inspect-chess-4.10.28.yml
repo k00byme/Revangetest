@@ -46,7 +46,7 @@ jobs:
           cp apk-list.txt report/
           cp decompiled/resources/AndroidManifest.xml report/AndroidManifest.xml 2>/dev/null || true
           python3 - <<'PY'
-          import pathlib, re
+          import pathlib
           root = pathlib.Path("decompiled/sources")
           report = pathlib.Path("report/classes-and-methods.txt")
           exact = [
@@ -61,20 +61,23 @@ jobs:
           with report.open("w", encoding="utf-8") as out:
               for rel in exact:
                   p = root / rel
-                  out.write("\\n\\n========== " + rel + " ==========\\n")
+                  out.write("\n\n========== " + rel + " ==========\n")
                   if not p.exists():
-                      out.write("NOT RECOVERED BY JADX\\n")
+                      out.write("NOT RECOVERED BY JADX\n")
                       continue
                   lines = p.read_text(encoding="utf-8", errors="ignore").splitlines()
                   for line in lines:
                       s = line.rstrip()
                       if (
-                          re.search(r"\\b(class|interface|enum)\\s+\\w+", s)
-                          or re.search(r"\\b(public|protected|private)\\b", s)
-                          or re.search(r"\\b(onCreate|onResume|onDraw|onLayout|getPosition|getFen|getFEN|getBoard|toFen|toFEN|fen|position)\\s*\\(", s, re.I)
-                          or "findViewById" in s or "setContentView" in s
+                          " class " in s or s.lstrip().startswith(("public ", "protected ", "private "))
+                          or any(token in s for token in [
+                              "onCreate(", "onResume(", "onDraw(", "onLayout(",
+                              "getPosition(", "getFen(", "getFEN(", "getBoard(",
+                              "toFen(", "toFEN(", "fen(", "position(",
+                              "findViewById", "setContentView"
+                          ])
                       ):
-                          out.write(s[:400] + "\\n")
+                          out.write(s[:400] + "\n")
           print(report.read_text(encoding="utf-8")[:12000])
           PY
           echo "Manifest activities:"
