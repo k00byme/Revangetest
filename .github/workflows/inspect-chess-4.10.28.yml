@@ -50,7 +50,11 @@ jobs:
             com.chess.entities.ResolvedGameConfiguration \
             chesscom.bots.v2.BotGameConfig \
             chesscom.bots.v2.BotGameContextExtension \
-            chesscom.computer.v2.GameMode
+            chesscom.computer.v2.GameMode \
+            com.chess.features.versusbots.game.BotGameActivityV2 \
+            com.chess.features.versusbots.game.BotGameViewModel \
+            com.chess.features.versusbots.game.BotGameEngine \
+            com.chess.chessboard.shadow.view.a
           do
             echo "Decompiling $cls"
             ./jadx/bin/jadx --no-res --threads-count 2 --single-class "$cls" -d decompiled xapk/com.chess.apk \
@@ -76,6 +80,10 @@ jobs:
               "chesscom/bots/v2/BotGameConfig.java",
               "chesscom/bots/v2/BotGameContextExtension.java",
               "chesscom/computer/v2/GameMode.java",
+              "com/chess/features/versusbots/game/BotGameActivityV2.java",
+              "com/chess/features/versusbots/game/BotGameViewModel.java",
+              "com/chess/features/versusbots/game/BotGameEngine.java",
+              "com/chess/chessboard/shadow/view/a.java",
           ]
           with report.open("w", encoding="utf-8") as out:
               for rel in exact:
