@@ -1,0 +1,79 @@
+name: Inspect Chess 4.10.28 structure
+
+on:
+  push:
+    branches:
+      - morphe-chess-assistant
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download APKPure XAPK
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 --retry-delay 2 \
+            -A "Mozilla/5.0" \
+            "https://data.winudf.com/XAPK/Y29tLmNoZXNzXzI4MDEyNV9jNDVkMWJlOA?_p=Y29tLmNoZXNz&filename=Chess+-+Play+and+Learn+Online_4.10.28-googleplay_APKPure.xapk&full_size=181608472&is_hot=true&k=020ae2b121f83ed231062a1bb3e296626aff7ada&package_name=com.chess&source=web&token=1794955226-ba50965e4a-0-694fcc3914035b795cfacc119853662d" \
+            -o chess.xapk
+          echo "d236513012230b88eae1de25c499b4803fee3bd46c6af47b367c4f8aa3176990  chess.xapk" | sha256sum -c -
+          unzip -q chess.xapk -d xapk
+          find xapk -maxdepth 2 -type f -name '*.apk' -printf '%p\n' | sort > apk-list.txt
+          test -s apk-list.txt
+          cat apk-list.txt
+
+      - name: Install JADX
+        run: |
+          curl -fL --retry 3 \
+            https://github.com/skylot/jadx/releases/download/v1.5.6/jadx-1.5.6.zip \
+            -o jadx.zip
+          unzip -q jadx.zip -d jadx
+          chmod +x jadx/bin/jadx
+
+      - name: Decompile and produce structural report
+        run: |
+          set -euo pipefail
+          mapfile -t apks < apk-list.txt
+          ./jadx/bin/jadx --threads-count 2 --show-bad-code -d decompiled "${apks[@]}" >/tmp/jadx.log 2>&1 || {
+            tail -80 /tmp/jadx.log
+            exit 1
+          }
+          mkdir -p report
+          cp apk-list.txt report/
+          cp decompiled/resources/AndroidManifest.xml report/AndroidManifest.xml 2>/dev/null || true
+          python3 - <<'PY'
+          import pathlib, re
+          root = pathlib.Path("decompiled/sources")
+          report = pathlib.Path("report/classes-and-methods.txt")
+          terms = ("chess", "board", "analysis", "game", "position", "bot", "engine", "play")
+          files = sorted(p for p in root.rglob("*.java") if any(t in str(p).lower() for t in terms))
+          with report.open("w", encoding="utf-8") as out:
+              out.write(f"Candidate source files: {len(files)}\n\n")
+              for p in files:
+                  try: lines = p.read_text(encoding="utf-8", errors="ignore").splitlines()
+                  except Exception: continue
+                  hits = []
+                  for line in lines:
+                      s = line.strip()
+                      if (re.search(r"\b(class|interface|enum)\s+\w+", s)
+                          or re.search(r"\b(onCreate|onResume|onDraw|onLayout|getPosition|getFen|getFEN|getBoard|toFen|toFEN|fen|position)\s*\(", s, re.I)):
+                          hits.append(s[:220])
+                  if hits:
+                      out.write(str(p.relative_to(root)) + "\n")
+                      for h in hits[:80]: out.write("  " + h + "\n")
+                      out.write("\n")
+          PY
+          echo "Manifest activities:"
+          grep -oE 'android:name="[^"]+"' report/AndroidManifest.xml 2>/dev/null | sort -u || true
+          echo "Candidate classes:"
+          grep -RIlE 'class .*?(ChessBoard|BoardView|StandaloneAnalysis|GameActivity|Bot)' decompiled/sources/com/chess 2>/dev/null | head -100 || true
+
+      - name: Upload structural report only
+        uses: actions/upload-artifact@v4
+        with:
+          name: chess-4.10.28-structural-report
+          path: report/
+          if-no-files-found: error
