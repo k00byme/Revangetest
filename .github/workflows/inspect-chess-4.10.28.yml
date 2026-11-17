@@ -44,7 +44,13 @@ jobs:
             com.chess.chessboard.variants.PositionExtKt \
             com.chess.chessboard.variants.standard.StandardPosition \
             com.chess.chessboard.variants.standard.bitboard.FenUtilsKt \
-            com.chess.features.analysis.standalonev2.StandaloneAnalysisActivityV2
+            com.chess.features.analysis.standalonev2.StandaloneAnalysisActivityV2 \
+            com.chess.entities.RealGameUiSetup \
+            com.chess.entities.ComputerAnalysisConfiguration \
+            com.chess.entities.ResolvedGameConfiguration \
+            chesscom.bots.v2.BotGameConfig \
+            chesscom.bots.v2.BotGameContextExtension \
+            chesscom.computer.v2.GameMode
           do
             echo "Decompiling $cls"
             ./jadx/bin/jadx --no-res --threads-count 2 --single-class "$cls" -d decompiled xapk/com.chess.apk \
@@ -64,6 +70,12 @@ jobs:
               "com/chess/chessboard/variants/standard/StandardPosition.java",
               "com/chess/chessboard/variants/standard/bitboard/FenUtilsKt.java",
               "com/chess/features/analysis/standalonev2/StandaloneAnalysisActivityV2.java",
+              "com/chess/entities/RealGameUiSetup.java",
+              "com/chess/entities/ComputerAnalysisConfiguration.java",
+              "com/chess/entities/ResolvedGameConfiguration.java",
+              "chesscom/bots/v2/BotGameConfig.java",
+              "chesscom/bots/v2/BotGameContextExtension.java",
+              "chesscom/computer/v2/GameMode.java",
           ]
           with report.open("w", encoding="utf-8") as out:
               for rel in exact:
