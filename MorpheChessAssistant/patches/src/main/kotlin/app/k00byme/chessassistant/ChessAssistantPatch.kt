@@ -1,8 +1,11 @@
 package app.k00byme.chessassistant
 
 import app.morphe.patcher.Fingerprint
-import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
+import app.morphe.patcher.extensions.InstructionExtensions.addInstruction
 import app.morphe.patcher.patch.patch
+import com.android.tools.smali.dexlib2.Opcode
+import com.android.tools.smali.dexlib2.builder.instruction.BuilderInstruction3rc
+import com.android.tools.smali.dexlib2.immutable.reference.ImmutableMethodReference
 
 private const val EXTENSION_CLASS = "Lapp/k00byme/chessassistant/extension/ChessAssistantPatch;"
 
@@ -25,11 +28,33 @@ val chessAssistantPatch = patch(
                 isStatic = false
             )
             val method = fingerprint.methodOrNull ?: throw fingerprint.patchException()
-            method.addInstructions(
+            val implementation = method.implementation
+                ?: throw IllegalStateException("onCreate has no DEX implementation: $className")
+
+            // p0 is the Activity instance. Build the invoke instruction directly,
+            // avoiding the inline Smali parser used by addInstructions(String).
+            val parameterRegisters = method.parameters.sumOf { parameter ->
+                if (parameter == "J" || parameter == "D") 2 else 1
+            }
+            val activityRegister = implementation.registerCount - parameterRegisters - 1
+            require(activityRegister >= 0) {
+                "Invalid Activity register for $className.onCreate"
+            }
+
+            val installMethod = ImmutableMethodReference(
+                EXTENSION_CLASS,
+                "install",
+                listOf("Landroid/app/Activity;"),
+                "V"
+            )
+            method.addInstruction(
                 0,
-                """
-                    invoke-static {p0}, ${EXTENSION_CLASS}->install(Landroid/app/Activity;)V
-                """
+                BuilderInstruction3rc(
+                    Opcode.INVOKE_STATIC_RANGE,
+                    activityRegister,
+                    1,
+                    installMethod
+                )
             )
         }
 
