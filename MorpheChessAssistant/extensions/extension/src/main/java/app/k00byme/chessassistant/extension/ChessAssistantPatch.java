@@ -37,9 +37,9 @@ import java.util.regex.Pattern;
 /**
  * Runtime code merged into Chess.com by Morphe.
  *
- * This extension is installed only from the dedicated Play-vs-Bots activity
- * and the standalone analysis activity. It does not hook competitive RealGameActivity,
- * click squares, submit moves, or change the game state.
+ * This extension is installed from the dedicated Play-vs-Bots activity,
+ * the general RealGameActivity used for online games, and standalone analysis.
+ * It only draws an overlay; it never clicks squares, submits moves, or changes game state.
  */
 public final class ChessAssistantPatch {
     private static final String TAG = "morphe.chess.assistant.analysis";
@@ -56,7 +56,8 @@ public final class ChessAssistantPatch {
         if (activity == null) return;
         String activityName = activity.getClass().getName();
         boolean supported = "com.chess.features.versusbots.game.BotGameActivityV2".equals(activityName)
-                || "com.chess.features.analysis.standalonev2.StandaloneAnalysisActivityV2".equals(activityName);
+                || "com.chess.features.analysis.standalonev2.StandaloneAnalysisActivityV2".equals(activityName)
+                || "com.chess.realchess.ui.game.RealGameActivity".equals(activityName);
         if (!supported) return;
 
         // onCreate is hooked before the app creates its content view, so defer installation.
