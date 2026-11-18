@@ -34,7 +34,7 @@ val chessAssistantPatch = patch(
             // p0 is the Activity instance. Build the invoke instruction directly,
             // avoiding the inline Smali parser used by addInstructions(String).
             val parameterRegisters = method.parameters.sumOf { parameter ->
-                if (parameter == "J" || parameter == "D") 2 else 1
+                if (parameter.type == "J" || parameter.type == "D") 2 else 1
             }
             val activityRegister = implementation.registerCount - parameterRegisters - 1
             require(activityRegister >= 0) {
