@@ -2,11 +2,13 @@
 
 Morphe patch bundle for **Chess.com Android 4.10.28-googleplay** (package `com.chess`).
 
-## Supported screens
+## Supported game screens
 
-- **Play vs Bots:** hooks the dedicated `BotGameActivityV2` used by Chess.com's bot games, including bot sessions started from its online or offline flow.
+- **Online games:** hooks the general `RealGameActivity` used by Chess.com's online game flow. This includes game formats that route through that screen, such as live games and other online game types supported by this app version.
+- **Play vs Bots:** hooks the dedicated `BotGameActivityV2` used for Chess.com's bot games, including games started from the app's online/offline bot flow.
 - **Standalone analysis:** hooks `StandaloneAnalysisActivityV2` for analysis and review.
-- **Competitive games against human players:** the general `RealGameActivity` is intentionally not hooked.
+
+The game-mode coverage is based on the activities and board classes recovered from Chess.com Android 4.10.28. Game formats using another, separate Activity not listed above are not confirmed by this build.
 
 ## Visual features
 
@@ -19,7 +21,7 @@ Morphe patch bundle for **Chess.com Android 4.10.28-googleplay** (package `com.c
 
 ## Engine connectivity and privacy
 
-The current patch requests analysis from `https://stockfish.online/api/s/v2.php` over HTTPS at depth 12. **The assistant needs an internet connection to obtain new engine suggestions**, even when the Chess.com bot game itself is being played in its offline mode. If the network is unavailable, the overlay reports that Stockfish is unavailable and clears the previous suggestion. This build does not bundle an on-device Stockfish engine.
+The current patch requests analysis from `https://stockfish.online/api/s/v2.php` over HTTPS at depth 12. The Stockfish service requires an internet connection for each new position. The patch does not include an on-device Stockfish engine.
 
 The board FEN is sent to the external Stockfish Online service for analysis. The extension does not intentionally send a username, account token, game identifier, or other account data. Do not use it with private positions if you do not want their FEN sent to that service.
 
@@ -39,4 +41,4 @@ The output is in `patches/build/libs/`.
 
 ## Verification status
 
-The target APK structure was inspected. The bot and standalone-analysis activity entry points, native `ChessBoardView`, and standard-position FEN accessor were confirmed in version 4.10.28. The Morphe bundle has been compiled successfully. However, runtime behaviour still needs confirmation on an Android device with the target Chess.com version; successful compilation alone does not prove that the overlay renders correctly in every bot session.
+The target APK structure was inspected. The dedicated bot activity, the general online-game activity, the native `ChessBoardView`, and the standard-position FEN accessor were recovered from version 4.10.28. The Morphe bundle must compile for the exact commit before distribution. Runtime rendering still needs confirmation on an Android device with this Chess.com version; successful compilation alone does not prove that the overlay renders correctly in every game format.
